@@ -9,7 +9,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Card, Form, Input, InputNumber, Select, Button,
   Row, Col, Table, Tag, Statistic, notification,
-  Divider, Space, Tooltip,
+  Divider, Space, Tooltip, Collapse, Typography,
 } from 'antd';
 import {
   ThunderboltOutlined, StopOutlined, InfoCircleOutlined,
@@ -195,6 +195,7 @@ export default function Benchmark() {
               <Form.Item
                 name="url"
                 label="Target URL"
+                tooltip="The full web address of the API you want to test. Example: https://api.example.com/users — copy it from your browser or Postman."
                 rules={[{ required: true, message: 'URL is required' }]}
               >
                 <Input placeholder="https://example.com/api/endpoint" />
@@ -203,7 +204,7 @@ export default function Benchmark() {
 
             {/* HTTP Method */}
             <Col xs={8} sm={4}>
-              <Form.Item name="method" label="Method">
+              <Form.Item name="method" label="Method" tooltip="GET = read/fetch data (no body needed). POST = send/create data. Use the same method your API endpoint expects.">
                 <Select
                   options={['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].map((m) => ({
                     value: m,
@@ -218,8 +219,8 @@ export default function Benchmark() {
               <Form.Item
                 name="connections"
                 label={
-                  <Tooltip title="Number of parallel HTTP connections (like concurrency)">
-                    Connections
+                  <Tooltip title="How many parallel connections to keep firing non-stop. Like having 10 people constantly knocking on the server's door. Higher = more load on your server.">
+                    Connections <InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} />
                   </Tooltip>
                 }
               >
@@ -229,7 +230,7 @@ export default function Benchmark() {
 
             {/* Duration in seconds */}
             <Col xs={8} sm={4}>
-              <Form.Item name="duration" label="Duration (s)">
+              <Form.Item name="duration" label="Duration (s)" tooltip="How many seconds to keep firing requests. 30 seconds is enough for a reliable result. Longer tests give more stable averages.">
                 <InputNumber min={1} max={300} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
@@ -241,8 +242,8 @@ export default function Benchmark() {
               <Form.Item
                 name="pipelining"
                 label={
-                  <Tooltip title="HTTP/1.1 pipelining factor. 1 = no pipelining (recommended for most APIs)">
-                    Pipelining
+                  <Tooltip title="Advanced: send multiple requests at once before waiting for replies. Keep at 1 for normal APIs. Only increase if you know your server supports HTTP pipelining.">
+                    Pipelining <InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 12 }} />
                   </Tooltip>
                 }
               >
@@ -254,7 +255,8 @@ export default function Benchmark() {
             <Col xs={24} sm={12}>
               <Form.Item
                 name="body"
-                label="Request Body (optional — for POST/PUT/PATCH)"
+                label="Request Body (optional)"
+                tooltip="Data to send with POST/PUT/PATCH requests — like filling in a form. Leave blank for GET. Use JSON format, e.g. {'key': 'value'}."
               >
                 <Input.TextArea
                   rows={2}
@@ -393,6 +395,56 @@ export default function Benchmark() {
           </Card>
         </>
       )}
+
+      {/* ── Field Guide & Results Guide ───────────────────────────────────────
+          Collapsed by default. Click to expand for plain-English explanations
+          of every field and what the results numbers actually mean.
+      ──────────────────────────────────────────────────────────────────────── */}
+      <Divider style={{ margin: '24px 0 12px' }} />
+      <Collapse
+        ghost
+        size="small"
+        items={[{
+          key: 'guide',
+          label: <span style={{ color: '#8c8c8c', fontSize: 13 }}>📖 What is Quick Benchmark and what do the numbers mean? (click to expand)</span>,
+          children: (
+            <div style={{ fontSize: 13, color: '#595959', lineHeight: 2 }}>
+              {/* Plain-English description of what this tool does */}
+              <p style={{ marginBottom: 12 }}>
+                <strong>Quick Benchmark</strong> is a <em>speedometer test</em> — it hammers your server
+                as fast as possible to find the maximum number of requests it can handle per second,
+                and how quickly it responds under pressure. Unlike Load Test, there is no ramp-up,
+                think time, or SLA rules — just raw, maximum speed.
+              </p>
+              <Row gutter={[16, 0]}>
+                <Col xs={24} sm={12}>
+                  <strong>Form fields:</strong>
+                  <ul style={{ paddingLeft: 18, marginTop: 4, margin: '4px 0 0' }}>
+                    <li><strong>Target URL</strong> — the API address you want to benchmark</li>
+                    <li><strong>Method</strong> — GET to read data, POST to send data</li>
+                    <li><strong>Connections</strong> — parallel requests kept firing non-stop (like concurrency). Higher = more load.</li>
+                    <li><strong>Duration</strong> — seconds to run. 30s is usually enough for a reliable result.</li>
+                    <li><strong>Pipelining</strong> — send multiple requests before waiting for replies. Keep at 1 for most APIs.</li>
+                    <li><strong>Body</strong> — data sent with POST/PUT requests (JSON format)</li>
+                  </ul>
+                </Col>
+                <Col xs={24} sm={12}>
+                  <strong>Results explained:</strong>
+                  <ul style={{ paddingLeft: 18, marginTop: 4, margin: '4px 0 0' }}>
+                    <li><strong>Req/s</strong> — requests handled per second on average (higher = faster server)</li>
+                    <li><strong>P50 latency</strong> — half of all requests were faster than this</li>
+                    <li><strong>P75 / P90</strong> — 75% / 90% of requests were faster than this</li>
+                    <li><strong>P99 latency</strong> — 99 out of 100 requests were faster (your normal worst case)</li>
+                    <li><strong>P99.9 latency</strong> — extreme tail — the very slowest 0.1% of requests</li>
+                    <li><strong>Non-2xx</strong> — responses with error status codes (4xx = client error, 5xx = server error)</li>
+                    <li><strong>Data Rate</strong> — how many KB/s the server sent back</li>
+                  </ul>
+                </Col>
+              </Row>
+            </div>
+          ),
+        }]}
+      />
     </div>
   );
 }

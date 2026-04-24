@@ -355,6 +355,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
             <Form.Item
               label="API URL"
               name="url"
+              tooltip="The web address of the API you want to test. Example: https://api.example.com/users — copy it from your browser, Postman, or API docs."
               rules={[
                 { required: true, message: 'URL is required' },
                 {
@@ -379,7 +380,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
 
           {/* Method */}
           <Col xs={24} md={8}>
-            <Form.Item label="HTTP Method" name="method">
+            <Form.Item label="HTTP Method" name="method" tooltip="GET = fetch/read data (no body needed). POST = send/create. PUT = replace/update. DELETE = remove. PATCH = partial update.">
               <Select size="large">
                 {['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD'].map((m) => (
                   <Select.Option key={m} value={m}>
@@ -398,7 +399,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
               label={
                 <Space>
                   Headers (JSON)
-                  <Tooltip title='Example: {"Authorization":"Bearer token","Content-Type":"application/json"}'>
+                  <Tooltip title="Extra info sent with every request — like showing an ID badge. 'Authorization' holds your login token. 'Content-Type: application/json' tells the server you're sending JSON data.">
                     <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
                   </Tooltip>
                 </Space>
@@ -427,7 +428,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
               label={
                 <Space>
                   Request Body (JSON)
-                  <Tooltip title="Only used for POST / PUT / PATCH requests">
+                  <Tooltip title="Data you send with the request — like filling in a form. Only needed when creating or updating something (POST/PUT/PATCH). Leave blank for GET requests.">
                     <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
                   </Tooltip>
                 </Space>
@@ -458,7 +459,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
               label={
                 <Space>
                   Concurrency
-                  <Tooltip title="Max simultaneous requests in flight">
+                  <Tooltip title="How many users hit the server at the same time. Example: 50 = 50 simultaneous users all sending requests. Higher values stress the server more.">
                     <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
                   </Tooltip>
                 </Space>
@@ -476,7 +477,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
               label={
                 <Space>
                   TPS
-                  <Tooltip title="Target transactions per second. Set 0 for unlimited.">
+                  <Tooltip title="How many requests to send every second — like a speed limit. Example: 10 = 10 requests/second. Set to 0 to go as fast as possible (no limit).">
                     <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
                   </Tooltip>
                 </Space>
@@ -493,6 +494,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
             <Form.Item
               label="Duration (sec)"
               name="duration"
+              tooltip="How long the test runs, in seconds. 60 = 1 minute of traffic. Start small (10–30s) to avoid overloading your server."
               rules={[{ required: true }]}
             >
               <InputNumber min={1} max={3600} style={{ width: '100%' }} />
@@ -505,7 +507,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
               label={
                 <Space>
                   Retries
-                  <Tooltip title="Retry count on connection errors (0–3)">
+                  <Tooltip title="If a request fails due to a network error, retry this many times before counting it as a failure. Like redialling a busy number. 0 = no retries.">
                     <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
                   </Tooltip>
                 </Space>
@@ -522,7 +524,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
               label={
                 <Space>
                   Timeout (ms)
-                  <Tooltip title="Per-request timeout in milliseconds">
+                  <Tooltip title="How long to wait for a server response before giving up. 10000 = 10 seconds. If the server doesn't reply in time, it counts as an error.">
                     <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
                   </Tooltip>
                 </Space>
@@ -545,7 +547,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
               label={
                 <Space>
                   Profile
-                  <Tooltip title="Constant: fixed TPS throughout | Ramp-up: gradually increase TPS | Step: increase TPS in steps">
+                  <Tooltip title="Constant = same speed the whole test. Ramp-up = starts slow and builds up gradually (like a morning rush). Step = increases load in chunks (like opening more checkout lanes every few minutes).">
                     <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
                   </Tooltip>
                 </Space>
@@ -566,7 +568,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
               label={
                 <Space>
                   Think Time (ms)
-                  <Tooltip title="Pause between requests per virtual user (simulates real user behavior). 0 = no pause.">
+                  <Tooltip title="Pause between requests — simulates a real user who reads the page before clicking again. 1000 = 1 second pause. 0 = fire back-to-back with no break (more aggressive test).">
                     <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
                   </Tooltip>
                 </Space>
@@ -584,7 +586,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
                 label={
                   <Space>
                     Ramp-up (sec)
-                    <Tooltip title="Time to gradually increase from 0 to target TPS">
+                    <Tooltip title="How many seconds to slowly build up to full speed. Like opening a tap gradually instead of all at once. 0 = start at full speed immediately.">
                       <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
                     </Tooltip>
                   </Space>
@@ -604,7 +606,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
                   label={
                     <Space>
                       Step Size (TPS)
-                      <Tooltip title="Amount to increase TPS at each step">
+                      <Tooltip title="How many extra requests/second to add at each step. Example: 10 = add 10 more req/s each time the load increases.">
                         <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
                       </Tooltip>
                     </Space>
@@ -619,7 +621,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
                   label={
                     <Space>
                       Step Interval (sec)
-                      <Tooltip title="How often to increase the TPS (in seconds)">
+                      <Tooltip title="How many seconds to wait before increasing the load again. Example: 30 = every 30 seconds, add another Step Size worth of requests.">
                         <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
                       </Tooltip>
                     </Space>
@@ -645,7 +647,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
             <Form.Item
               label="Max Error Rate (%)"
               name="maxErrorRate"
-              tooltip="Stop the test automatically if the error rate reaches this %. Set to 0 to disable."
+              tooltip="Auto-stop: if more than X% of requests fail, the test stops to protect your server. Example: 5 = stop when 5% fail. 0 = never auto-stop based on errors."
             >
               <InputNumber min={0} max={100} step={1} style={{ width: '100%' }} placeholder="0 = disabled" />
             </Form.Item>
@@ -654,7 +656,7 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
             <Form.Item
               label="Max P95 Latency (ms)"
               name="maxP95"
-              tooltip="Stop the test automatically if P95 response time exceeds this value. Set to 0 to disable."
+              tooltip="Auto-stop: if 95% of responses are slower than X milliseconds, the test stops. P95 = the slowest 5% of requests. Example: 2000 = stop when responses regularly exceed 2 seconds. 0 = disabled."
             >
               <InputNumber min={0} max={60000} step={100} style={{ width: '100%' }} placeholder="0 = disabled" />
             </Form.Item>
@@ -695,6 +697,49 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
           </Button>
         </Space>
       </Form>
+
+      {/* ── Field Guide ──────────────────────────────────────────────────────
+          Collapsed by default. Click to expand for plain-English descriptions
+          of every field — helpful for first-time users or beginners.
+      ──────────────────────────────────────────────────────────────────────── */}
+      <Divider style={{ margin: '20px 0 12px' }} />
+      <Collapse
+        ghost
+        size="small"
+        items={[{
+          key: 'guide',
+          label: <span style={{ color: '#8c8c8c', fontSize: 13 }}>📖 Field Guide — what does each setting do? (click to expand)</span>,
+          children: (
+            <Row gutter={[16, 0]} style={{ fontSize: 13, color: '#595959', lineHeight: 2 }}>
+              <Col xs={24} sm={12}>
+                <ul style={{ paddingLeft: 18, margin: 0 }}>
+                  <li><strong>API URL</strong> — the address of your API, e.g. https://api.example.com/users</li>
+                  <li><strong>Method</strong> — GET = read data, POST = send data, PUT = update, DELETE = remove</li>
+                  <li><strong>Headers</strong> — extra info per request, e.g. your auth token or content type</li>
+                  <li><strong>Body</strong> — data sent with POST/PUT requests (leave blank for GET)</li>
+                  <li><strong>Concurrency</strong> — how many users hit the server at the same time</li>
+                  <li><strong>TPS</strong> — requests per second (0 = no speed limit)</li>
+                  <li><strong>Duration</strong> — how many seconds the test runs for</li>
+                  <li><strong>Retries</strong> — retry a failed request N times before counting it as an error</li>
+                  <li><strong>Timeout</strong> — give up waiting for a response after X milliseconds</li>
+                </ul>
+              </Col>
+              <Col xs={24} sm={12}>
+                <ul style={{ paddingLeft: 18, margin: 0 }}>
+                  <li><strong>Load Profile</strong> — shape of traffic: constant speed, gradual ramp-up, or step increases</li>
+                  <li><strong>Think Time</strong> — pause between requests (simulates a real user reading the page)</li>
+                  <li><strong>Ramp-up</strong> — seconds to slowly reach full speed from 0</li>
+                  <li><strong>Step Size</strong> — how much TPS to add at each load step</li>
+                  <li><strong>Step Interval</strong> — seconds between each load increase</li>
+                  <li><strong>Max Error Rate</strong> — auto-stop the test if X% of requests fail</li>
+                  <li><strong>Max P95</strong> — auto-stop if 95% of responses are slower than X ms</li>
+                  <li><strong>Variables</strong> — use <Text code>{'{{'+'random_uuid'+'}}'},  {'{{'+'random_int'+'}}'},  {'{{'+'timestamp'+'}}' }</Text> in URL/body to send different data each request</li>
+                </ul>
+              </Col>
+            </Row>
+          ),
+        }]}
+      />
     </Card>
   );
 }
