@@ -55,7 +55,27 @@ function isValidJson(str) {
 // ─── cURL Parser ─────────────────────────────────────────────────────────────
 // Parses a cURL command string and returns { url, method, headers, body }.
 // Handles: -H / --header, -X / --request, --data-raw / --data / -d,
+//          -b / --cookie, and all other flags that consume a value,
 //          single-quoted and double-quoted values, and line continuations (\).
+
+// Flags that take a value argument but whose values we don't need.
+// These must be consumed so their value doesn't get mistaken for the URL.
+const SKIP_FLAGS = new Set([
+  '-b', '--cookie',          // cookies — common cause of URL mis-detection
+  '-u', '--user',            // username:password
+  '-A', '--user-agent',      // user agent (already covered by -H)
+  '-e', '--referer',         // referer (already covered by -H)
+  '-m', '--max-time',        // timeout
+  '--connect-timeout',       // connect timeout
+  '-x', '--proxy',           // proxy URL
+  '-o', '--output',          // output file
+  '--cert', '--key',         // TLS cert/key
+  '--cacert', '--capath',    // CA cert
+  '-F', '--form',            // multipart form (not supported in our tool)
+  '--limit-rate',            // rate limit
+  '--resolve',               // host resolve override
+  '--dns-servers',           // DNS override
+]);
 
 function tokenizeCurl(str) {
   // Break the cURL string into an array of tokens, respecting quoted strings.
@@ -134,6 +154,11 @@ function parseCurl(curlStr) {
       // Request body — implies POST if method not already set
       body = tokens[++i] || null;
       if (!method) method = 'POST';
+
+    } else if (SKIP_FLAGS.has(tok)) {
+      // These flags take a value we don't need — skip the value token so it
+      // doesn't get mistaken for the URL. Example: -b 'cookie=abc' → skip 'cookie=abc'
+      i++;
 
     } else if (!tok.startsWith('-')) {
       // Positional argument without a flag → this is the URL
