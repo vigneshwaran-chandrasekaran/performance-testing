@@ -1,0 +1,13 @@
+{
+  "name": "api-load-tester",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "dev": "concurrently \"cd backend && npm run dev\" \"cd frontend && npm run dev\" --names \"backend,frontend\" --prefix-colors \"cyan,magenta\"",
+    "start": "concurrently \"cd backend && npm start\" \"cd frontend && npm run preview\" --names \"backend,frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
