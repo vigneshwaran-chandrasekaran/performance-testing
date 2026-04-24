@@ -13,11 +13,14 @@ import {
   Tooltip,
   Alert,
   Divider,
+  Collapse,
+  message,
 } from 'antd';
 import {
   PlayCircleOutlined,
   StopOutlined,
   InfoCircleOutlined,
+  CodeOutlined,
 } from '@ant-design/icons';
 
 const { TextArea } = Input;
@@ -49,14 +52,160 @@ function isValidJson(str) {
   }
 }
 
+// ─── cURL Parser ─────────────────────────────────────────────────────────────
+// Parses a cURL command string and returns { url, method, headers, body }.
+// Handles: -H / --header, -X / --request, --data-raw / --data / -d,
+//          single-quoted and double-quoted values, and line continuations (\).
+
+function tokenizeCurl(str) {
+  // Break the cURL string into an array of tokens, respecting quoted strings.
+  // Example: curl 'https://x.com' -H 'foo: bar'  → ['curl','https://x.com','-H','foo: bar']
+  const tokens = [];
+  let i = 0;
+  while (i < str.length) {
+    // Skip whitespace between tokens
+    while (i < str.length && /\s/.test(str[i])) i++;
+    if (i >= str.length) break;
+
+    if (str[i] === "'") {
+      // Single-quoted token — read until the closing single quote
+      let j = i + 1;
+      while (j < str.length && str[j] !== "'") j++;
+      tokens.push(str.slice(i + 1, j));
+      i = j + 1;
+    } else if (str[i] === '"') {
+      // Double-quoted token — respect backslash escapes inside
+      let j = i + 1;
+      while (j < str.length && str[j] !== '"') {
+        if (str[j] === '\\') j++; // skip escaped character
+        j++;
+      }
+      tokens.push(str.slice(i + 1, j));
+      i = j + 1;
+    } else {
+      // Unquoted token — read until whitespace
+      let j = i;
+      while (j < str.length && !/\s/.test(str[j])) j++;
+      tokens.push(str.slice(i, j));
+      i = j;
+    }
+  }
+  return tokens;
+}
+
+function parseCurl(curlStr) {
+  // Step 1: Remove line-continuation characters (backslash + newline)
+  const normalized = curlStr.replace(/\\\n/g, ' ').trim();
+
+  const tokens = tokenizeCurl(normalized);
+
+  let url = '';
+  let method = '';       // will default to GET or POST based on body presence
+  const headers = {};
+  let body = null;
+
+  let i = 0;
+  // Skip the leading 'curl' token
+  if (tokens[i] && tokens[i].toLowerCase() === 'curl') i++;
+
+  while (i < tokens.length) {
+    const tok = tokens[i];
+
+    if (tok === '-X' || tok === '--request') {
+      // Explicit method: -X POST
+      method = (tokens[++i] || '').toUpperCase();
+
+    } else if (tok === '-H' || tok === '--header') {
+      // Header: -H 'Content-Type: application/json'
+      const raw = tokens[++i] || '';
+      const colonIdx = raw.indexOf(':');
+      if (colonIdx > 0) {
+        const key   = raw.slice(0, colonIdx).trim();
+        const value = raw.slice(colonIdx + 1).trim();
+        headers[key] = value;
+      }
+
+    } else if (
+      tok === '--data-raw' ||
+      tok === '--data'     ||
+      tok === '--data-binary' ||
+      tok === '-d'
+    ) {
+      // Request body — implies POST if method not already set
+      body = tokens[++i] || null;
+      if (!method) method = 'POST';
+
+    } else if (!tok.startsWith('-')) {
+      // Positional argument without a flag → this is the URL
+      // Strip any surrounding quotes that weren't caught by the tokenizer
+      url = tok.replace(/^["']|["']$/g, '');
+    }
+
+    i++;
+  }
+
+  // Default method
+  if (!method) method = body ? 'POST' : 'GET';
+
+  return { url, method, headers, body };
+}
+
 export default function TestForm({ onStart, onStop, isRunning, initialValues, formRef }) {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [curlInput, setCurlInput] = useState('');        // raw cURL text in the textarea
+  const [curlPanelOpen, setCurlPanelOpen] = useState([]); // controls collapse open/closed
   // Watch loadProfile to show/hide conditional fields
   const loadProfile = Form.useWatch('loadProfile', form);
 
   // Allow parent components (e.g. SavedProfiles) to set form values
   if (formRef) formRef.current = form;
+
+  // ─── cURL import handler ────────────────────────────────────────────
+  // Parses the pasted cURL and populates the form fields automatically.
+  const handleParseCurl = () => {
+    if (!curlInput.trim()) {
+      message.warning('Paste a cURL command first');
+      return;
+    }
+    try {
+      const { url, method, headers, body } = parseCurl(curlInput);
+
+      if (!url) {
+        message.error('Could not find a URL in the cURL command');
+        return;
+      }
+
+      // Convert headers object → pretty-printed JSON string for the textarea
+      const headersJson = Object.keys(headers).length > 0
+        ? JSON.stringify(headers, null, 2)
+        : '';
+
+      // If body is valid JSON, pretty-print it; otherwise keep as-is
+      let bodyStr = '';
+      if (body) {
+        try {
+          bodyStr = JSON.stringify(JSON.parse(body), null, 2);
+        } catch {
+          bodyStr = body; // not JSON — leave as plain string
+        }
+      }
+
+      // Fill all the matching form fields at once
+      form.setFieldsValue({
+        url,
+        method,
+        headers: headersJson,
+        body: bodyStr,
+      });
+
+      // Collapse the import panel so the user sees the filled form
+      setCurlPanelOpen([]);
+      message.success('cURL imported — review the fields below and click Start Test');
+    } catch (err) {
+      message.error(`Failed to parse cURL: ${err.message}`);
+    }
+  };
 
   const handleStart = async () => {
     try {
@@ -127,6 +276,54 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
         initialValues={{ ...DEFAULT_VALUES, ...initialValues }}
         disabled={isRunning}
       >
+        {/* ─── cURL Import ─────────────────────────────────────────────────────
+            Paste any cURL command here and click "Parse & Fill" to auto-fill
+            the URL, method, headers, and body fields below.
+        ──────────────────────────────────────────────────────────────────────── */}
+        <Collapse
+          activeKey={curlPanelOpen}
+          onChange={setCurlPanelOpen}
+          ghost
+          style={{ marginBottom: 16, border: '1px dashed #d9d9d9', borderRadius: 8 }}
+          items={[{
+            key: 'curl',
+            label: (
+              <Space>
+                <CodeOutlined style={{ color: '#1677ff' }} />
+                <span style={{ fontWeight: 500 }}>Import from cURL</span>
+                <span style={{ color: '#8c8c8c', fontSize: 12, fontWeight: 400 }}>
+                  — paste a cURL command to auto-fill the form
+                </span>
+              </Space>
+            ),
+            children: (
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <TextArea
+                  rows={6}
+                  value={curlInput}
+                  onChange={(e) => setCurlInput(e.target.value)}
+                  placeholder={`curl 'https://api.example.com/endpoint' \\\n  -H 'Content-Type: application/json' \\\n  --data-raw '{"key":"value"}'`}
+                  style={{ fontFamily: 'monospace', fontSize: 12 }}
+                  allowClear
+                />
+                <Space>
+                  <Button
+                    type="primary"
+                    icon={<CodeOutlined />}
+                    onClick={handleParseCurl}
+                    disabled={isRunning}
+                  >
+                    Parse &amp; Fill Form
+                  </Button>
+                  <Button onClick={() => setCurlInput('')} disabled={isRunning}>
+                    Clear
+                  </Button>
+                </Space>
+              </Space>
+            ),
+          }]}
+        />
+
         <Row gutter={16}>
           {/* URL */}
           <Col xs={24} md={16}>
