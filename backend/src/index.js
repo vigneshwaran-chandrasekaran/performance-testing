@@ -17,12 +17,19 @@ const io = new Server(httpServer, {
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Initialize service with socket.io instance
+// Initialize load-test service with socket.io instance
 const loadTestService = require('./services/loadTestService')(io);
 
-// Mount controller
+// Mount load-test controller
 const loadTestController = require('./controllers/loadTestController')(loadTestService);
 app.use('/api/load-test', loadTestController);
+
+// Initialize benchmark service (autocannon-based quick benchmarking)
+const benchmarkService = require('./services/benchmarkService')(io);
+
+// Mount benchmark controller
+const benchmarkController = require('./controllers/benchmarkController')(benchmarkService);
+app.use('/api/benchmark', benchmarkController);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
