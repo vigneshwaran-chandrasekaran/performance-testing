@@ -23,6 +23,9 @@ import { HistoryOutlined, EyeOutlined } from '@ant-design/icons';
 
 const { Text } = Typography;
 
+// Backend URL — must match the env variable set on Vercel; falls back to localhost for dev
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+
 // Color the success rate: green >= 95%, orange >= 80%, red below
 function rateColor(rate) {
   if (rate >= 95) return 'green';
@@ -39,7 +42,9 @@ export default function HistoryDrawer({ open, onClose }) {
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    fetch('/api/load-test/history')
+    // Use BACKEND_URL so this works in production (Vercel → Render).
+    // Previously used a relative URL '/api/...' which only works in local dev.
+    fetch(`${BACKEND_URL}/api/load-test/history`)
       .then((res) => res.json())
       .then((data) => setHistory(data || []))
       .catch((err) => console.error('[HistoryDrawer] fetch error:', err))
