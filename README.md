@@ -2,11 +2,20 @@
 
 A JMeter-style API load testing tool with a React + Ant Design frontend and a Node.js backend that uses `worker_threads` for true parallel load generation.
 
+## Live Demo
+
+| | URL |
+|---|---|
+| **Frontend** | https://performance-testing-eta.vercel.app/ |
+| **Backend** | https://performance-testing-mvxq.onrender.com/ |
+
+> **Note:** The backend is on Render's free tier — it may take ~30 seconds to wake up after inactivity. Hit the [health endpoint](https://performance-testing-mvxq.onrender.com/health) first if the frontend shows a connection error.
+
 ## Architecture
 
 ```
-frontend/   React + Ant Design + Recharts + Socket.IO client (port 3000)
-backend/    Node.js + Express + Socket.IO + worker_threads (port 5000)
+frontend/   React + Ant Design + Recharts + Socket.IO client  →  Vercel
+backend/    Node.js + Express + Socket.IO + worker_threads    →  Render
 ```
 
 ## Quick Start
