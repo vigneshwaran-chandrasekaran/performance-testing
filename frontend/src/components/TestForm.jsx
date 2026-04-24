@@ -35,6 +35,8 @@ const DEFAULT_VALUES = {
   thinkTime: 0,
   stepSize: 10,
   stepInterval: 10,
+  maxErrorRate: 0, // SLA: % error rate threshold (0 = disabled)
+  maxP95: 0,       // SLA: P95 latency ms threshold (0 = disabled)
 };
 
 function isValidJson(str) {
@@ -98,6 +100,9 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
         thinkTime: values.thinkTime ?? 0,
         stepSize: values.stepSize ?? 0,
         stepInterval: values.stepInterval ?? 10,
+        // SLA auto-stop thresholds (0 = disabled)
+        maxErrorRate: values.maxErrorRate ?? 0,
+        maxP95: values.maxP95 ?? 0,
       });
     } catch {
       // validation errors are shown inline
@@ -404,6 +409,34 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
               </Col>
             </>
           )}
+        </Row>
+
+        {/* ─── SLA Thresholds ─────────────────────────────────────────────────
+            Auto-stop the test when error rate OR P95 latency exceeds the limit.
+            Set a field to 0 (default) to disable that threshold.
+        ──────────────────────────────────────────────────────────────────────── */}
+        <Divider orientation="left" style={{ fontSize: 13, color: '#595959', marginTop: 8 }}>
+          SLA Thresholds (auto-stop on breach)
+        </Divider>
+        <Row gutter={16}>
+          <Col xs={24} sm={12}>
+            <Form.Item
+              label="Max Error Rate (%)"
+              name="maxErrorRate"
+              tooltip="Stop the test automatically if the error rate reaches this %. Set to 0 to disable."
+            >
+              <InputNumber min={0} max={100} step={1} style={{ width: '100%' }} placeholder="0 = disabled" />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12}>
+            <Form.Item
+              label="Max P95 Latency (ms)"
+              name="maxP95"
+              tooltip="Stop the test automatically if P95 response time exceeds this value. Set to 0 to disable."
+            >
+              <InputNumber min={0} max={60000} step={100} style={{ width: '100%' }} placeholder="0 = disabled" />
+            </Form.Item>
+          </Col>
         </Row>
 
         {isRunning && (

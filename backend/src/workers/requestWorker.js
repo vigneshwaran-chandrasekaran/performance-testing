@@ -10,10 +10,20 @@
  */
 const { workerData, parentPort } = require('worker_threads');
 const axios = require('axios');
+const http = require('http');
+const https = require('https');
 
 const { config, tpsPerWorker, concurrencyPerWorker, rampUp = 0 } = workerData;
 
 let running = true;
+
+// ─── HTTP Keep-Alive agents ───────────────────────────────────────────────────
+// Reuse TCP connections between requests instead of opening a new one every time.
+// This reduces latency by ~50-100ms per request on the first connection
+// and significantly lowers CPU/memory usage at high TPS.
+// maxSockets = concurrencyPerWorker so we don't open more connections than needed.
+const httpAgent  = new http.Agent ({ keepAlive: true, maxSockets: concurrencyPerWorker });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: concurrencyPerWorker });
 
 // ─── Token bucket (rate limiter) ──────────────────────────────────────────────
 // Controls how many requests per second this worker sends.
@@ -90,6 +100,31 @@ function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+// ─── Variable substitution ────────────────────────────────────────────────────
+// Replaces template variables in a string before each request.
+// This lets you test endpoints that reject duplicate IDs (e.g. POST /orders).
+//
+// Supported variables:
+//   {{random_int}}  → random integer 0–999999
+//   {{random_uuid}} → UUID v4 format  (e.g. a3f2c1d4-...)
+//   {{timestamp}}   → current Unix timestamp in ms
+//
+// Example URL:  https://api.example.com/users/{{random_int}}
+// Example body: {"orderId":"{{random_uuid}}","createdAt":{{timestamp}}}
+function resolveVariables(str) {
+  if (!str || typeof str !== 'string') return str;
+  return str
+    .replace(/\{\{random_int\}\}/g, () => Math.floor(Math.random() * 1000000))
+    .replace(/\{\{random_uuid\}\}/g, () => {
+      // Simple UUID v4 without external library
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+      });
+    })
+    .replace(/\{\{timestamp\}\}/g, () => Date.now());
+}
+
 // ─── Core request function with retry ─────────────────────────────────────────
 // Makes a single HTTP request and sends the result back to the main thread.
 // Retries only on network-level errors (not on HTTP 4xx/5xx).
@@ -100,18 +135,28 @@ async function makeRequest() {
   let lastStatus = 0;
   let totalTime = 0;
 
+  // Resolve template variables fresh for every request
+  // so each request gets unique values (important for IDs, timestamps)
+  const resolvedUrl  = resolveVariables(config.url);
+  const resolvedBody = config.body
+    ? resolveVariables(typeof config.body === 'string' ? config.body : JSON.stringify(config.body))
+    : undefined;
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const start = Date.now();
     try {
       const response = await axios({
-        url: config.url,
+        url: resolvedUrl,
         method: config.method || 'GET',
         headers: config.headers || {},
         // Only send body for methods that support it
-        data: ['POST', 'PUT', 'PATCH'].includes(config.method) ? config.body : undefined,
+        data: ['POST', 'PUT', 'PATCH'].includes(config.method) ? resolvedBody : undefined,
         timeout: config.timeout || 30000,
         validateStatus: () => true, // don't throw on 4xx/5xx, we handle it ourselves
         maxRedirects: 5,
+        // Use keep-alive agents so TCP connections are reused across requests
+        httpAgent,
+        httpsAgent,
       });
 
       totalTime = Date.now() - start;

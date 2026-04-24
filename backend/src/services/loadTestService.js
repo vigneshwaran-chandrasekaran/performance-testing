@@ -48,11 +48,12 @@ module.exports = (io) => {
 
       recentLogs: [],       // last 200 individual request logs shown in UI table
       allLogs: [],          // full log for CSV/JSON export (capped at 10 000)
-      perSecondData: [],    // [{second, tps, avgResponseTime}] for live charts
+      perSecondData: [],    // [{second, tps, avgResponseTime, p95}] for live charts
 
       // Per-second accumulators (reset every second)
       _secondRequests: 0,
       _secondResponseTimeSum: 0,
+      _secondResponseTimes: [], // raw times this second — used to calculate per-second P95
       _secondStart: Date.now(),
     };
   }
@@ -114,6 +115,7 @@ module.exports = (io) => {
     // Per-second counters for the live chart
     metrics._secondRequests++;
     metrics._secondResponseTimeSum += msg.responseTime;
+    metrics._secondResponseTimes.push(msg.responseTime);
 
     const logEntry = {
       id: msg.requestId,
@@ -138,17 +140,22 @@ module.exports = (io) => {
       ? Math.round(metrics._secondResponseTimeSum / metrics._secondRequests)
       : 0;
 
+    // Calculate P95 for just this second (shows latency spikes in real time)
+    const sortedSecond = [...metrics._secondResponseTimes].sort((a, b) => a - b);
+    const p95Second = percentile(sortedSecond, 95);
+
     const second = testState.startTime
       ? Math.floor((Date.now() - testState.startTime) / 1000)
       : metrics.perSecondData.length + 1;
 
-    metrics.perSecondData.push({ second, tps, avgResponseTime: avgRt });
+    metrics.perSecondData.push({ second, tps, avgResponseTime: avgRt, p95: p95Second });
 
-    // Keep last 120 data points
+    // Keep last 120 data points (2 minutes of history)
     if (metrics.perSecondData.length > 120) metrics.perSecondData.shift();
 
     metrics._secondRequests = 0;
     metrics._secondResponseTimeSum = 0;
+    metrics._secondResponseTimes = [];
     metrics._secondStart = Date.now();
   }
 
@@ -228,6 +235,8 @@ module.exports = (io) => {
       loadProfile = 'constant', // 'constant' | 'ramp' | 'step'
       stepSize = 0,     // TPS to add every stepInterval seconds (for 'step' mode)
       stepInterval = 10,// seconds between each step increase
+      maxErrorRate = 0, // SLA: auto-stop when error % exceeds this (0 = disabled)
+      maxP95 = 0,       // SLA: auto-stop when P95 ms exceeds this (0 = disabled)
     } = config;
 
     // Worker count: capped by CPU count, 16, concurrency, AND tps
@@ -287,7 +296,37 @@ module.exports = (io) => {
     emitInterval = setInterval(() => {
       if (!testState.running) return;
       flushSecondMetrics();
-      io.emit('metrics-update', buildSnapshot());
+      const snapshot = buildSnapshot();
+      io.emit('metrics-update', snapshot);
+
+      // ── SLA check ────────────────────────────────────────────────
+      // Auto-stop the test if error rate or P95 latency exceeds the
+      // configured threshold. 0 means "disabled" for that threshold.
+
+      // Only check after at least 5 requests so early noise doesn't trigger it
+      if (snapshot.totalRequests >= 5) {
+        // Check error rate threshold
+        if (maxErrorRate > 0 && snapshot.totalRequests > 0) {
+          const errorRate = (snapshot.failureCount / snapshot.totalRequests) * 100;
+          if (errorRate >= maxErrorRate) {
+            io.emit('sla-breach', {
+              reason: `Error rate ${errorRate.toFixed(1)}% exceeded SLA threshold of ${maxErrorRate}%`,
+              snapshot,
+            });
+            stopTest();
+            return;
+          }
+        }
+        // Check P95 latency threshold
+        if (maxP95 > 0 && snapshot.p95 > 0 && snapshot.p95 > maxP95) {
+          io.emit('sla-breach', {
+            reason: `P95 latency ${snapshot.p95}ms exceeded SLA threshold of ${maxP95}ms`,
+            snapshot,
+          });
+          stopTest();
+          return;
+        }
+      }
     }, 1000);
 
     // Auto-stop after duration

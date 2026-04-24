@@ -32,7 +32,11 @@ const CustomTooltipRt = ({ active, payload, label }) => {
   return (
     <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 6, padding: '8px 12px' }}>
       <p style={{ margin: 0, color: '#595959', fontSize: 12 }}>Second: {label}</p>
-      <p style={{ margin: 0, color: '#722ed1', fontWeight: 600 }}>Avg RT: {payload[0]?.value} ms</p>
+      {payload.map((p) => (
+        <p key={p.name} style={{ margin: 0, color: p.color, fontWeight: 600 }}>
+          {p.name}: {p.value} ms
+        </p>
+      ))}
     </div>
   );
 };
@@ -137,6 +141,18 @@ export default function RealtimeCharts({ chartData, metrics }) {
                     strokeWidth={2}
                     dot={false}
                     activeDot={{ r: 4 }}
+                    isAnimationActive={false}
+                  />
+                  {/* P95 line — shows tail latency spikes that avg hides */}
+                  <Line
+                    type="monotone"
+                    dataKey="p95"
+                    name="P95 (ms)"
+                    stroke="#ff4d4f"
+                    strokeWidth={1.5}
+                    strokeDasharray="4 3"
+                    dot={false}
+                    activeDot={{ r: 3 }}
                     isAnimationActive={false}
                   />
                 </LineChart>

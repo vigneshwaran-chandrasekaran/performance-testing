@@ -92,6 +92,17 @@ export default function LoadTest() {
       });
     });
 
+    // Fired when an SLA threshold (error rate or P95) is breached.
+    // The backend automatically stops the test before emitting this event.
+    socket.on('sla-breach', (data) => {
+      setIsRunning(false);
+      api.warning({
+        message: 'SLA Threshold Breached — Test Stopped',
+        description: data.reason,
+        duration: 10,
+      });
+    });
+
     return () => socket.disconnect();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -154,15 +165,44 @@ export default function LoadTest() {
             avgResponseTime: data.avgResponseTime,
             minResponseTime: data.minResponseTime,
             maxResponseTime: data.maxResponseTime,
+            // Full percentile breakdown so you can analyse tail latency offline
+            p50: data.p50,
+            p90: data.p90,
+            p95: data.p95,
+            p99: data.p99,
             elapsedSeconds: data.elapsedSeconds,
           },
+          // Response time distribution buckets (useful for histograms in other tools)
+          histogram: data.histogram || {},
+          // Breakdown of every distinct HTTP status code seen during the test
+          errorBreakdown: data.errorBreakdown || {},
           perSecondData: data.perSecondData,
           logs: logData,
         };
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
         downloadBlob(blob, `load-test-${data.testId?.slice(0, 8) ?? 'results'}.json`);
       } else if (format === 'csv') {
-        const csv = convertToCSV(logData);
+        // Build a summary header block so the CSV is self-contained
+        // (you can open it in Excel and immediately see the key numbers)
+        const summaryLines = [
+          '# SUMMARY',
+          `# Test ID,${data.testId ?? ''}`,
+          `# Total Requests,${data.totalRequests ?? 0}`,
+          `# Success,${data.successCount ?? 0}`,
+          `# Failures,${data.failureCount ?? 0}`,
+          `# Success Rate (%),${data.successRate ?? 0}`,
+          `# Avg RT (ms),${data.avgResponseTime ?? 0}`,
+          `# Min RT (ms),${data.minResponseTime ?? 0}`,
+          `# Max RT (ms),${data.maxResponseTime ?? 0}`,
+          `# P50 (ms),${data.p50 ?? 0}`,
+          `# P90 (ms),${data.p90 ?? 0}`,
+          `# P95 (ms),${data.p95 ?? 0}`,
+          `# P99 (ms),${data.p99 ?? 0}`,
+          `# Duration (s),${data.elapsedSeconds ?? 0}`,
+          '#',
+          '# REQUEST LOG',
+        ].join('\n');
+        const csv = summaryLines + '\n' + convertToCSV(logData);
         const blob = new Blob([csv], { type: 'text/csv' });
         downloadBlob(blob, `load-test-${data.testId?.slice(0, 8) ?? 'results'}.csv`);
       }

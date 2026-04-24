@@ -21,6 +21,8 @@ module.exports = (loadTestService) => {
         loadProfile = 'constant',
         stepSize = 0,
         stepInterval = 10,
+        maxErrorRate = 0, // SLA: auto-stop when error rate (%) exceeds this; 0 = disabled
+        maxP95 = 0,       // SLA: auto-stop when P95 latency (ms) exceeds this; 0 = disabled
       } = req.body;
 
       if (!url || typeof url !== 'string') {
@@ -64,6 +66,9 @@ module.exports = (loadTestService) => {
         loadProfile: ['constant', 'ramp', 'step'].includes(loadProfile) ? loadProfile : 'constant',
         stepSize: Math.max(0, Number(stepSize) || 0),
         stepInterval: Math.min(Math.max(1, Number(stepInterval) || 10), 300),
+        // SLA thresholds — clamp to valid ranges
+        maxErrorRate: Math.min(Math.max(0, Number(maxErrorRate) || 0), 100),
+        maxP95: Math.min(Math.max(0, Number(maxP95) || 0), 60000),
       };
 
       const testId = await loadTestService.startTest(config);
