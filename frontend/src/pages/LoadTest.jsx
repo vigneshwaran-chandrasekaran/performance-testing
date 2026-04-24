@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { notification, Divider } from 'antd';
+import { notification, Divider, Button, Space } from 'antd';
+import { HistoryOutlined } from '@ant-design/icons';
 import { io } from 'socket.io-client';
 import TestForm from '../components/TestForm';
 import MetricsCards from '../components/MetricsCards';
 import RealtimeCharts from '../components/RealtimeCharts';
 import LogsTable from '../components/LogsTable';
+import HistoryDrawer from '../components/HistoryDrawer';
+import SavedProfiles from '../components/SavedProfiles';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
@@ -38,8 +41,10 @@ export default function LoadTest() {
   const [logs, setLogs] = useState([]);
   const [chartData, setChartData] = useState([]);
   const [connected, setConnected] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false); // controls HistoryDrawer
 
   const socketRef = useRef(null);
+  const formRef = useRef(null); // shared ref so SavedProfiles can read/set form values
   const [api, contextHolder] = notification.useNotification();
 
   // ─── Socket.IO setup ────────────────────────────────────────────────
@@ -174,16 +179,40 @@ export default function LoadTest() {
     <div>
       {contextHolder}
 
-      <TestForm onStart={handleStart} onStop={handleStop} isRunning={isRunning} />
+      {/* Header row: History button */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <Button
+          icon={<HistoryOutlined />}
+          onClick={() => setHistoryOpen(true)}
+        >
+          History
+        </Button>
+      </div>
+
+      {/* Saved profiles strip — lets users load/save test configs */}
+      <SavedProfiles formRef={formRef} />
+
+      {/* Main test form — formRef allows SavedProfiles to inject values */}
+      <TestForm
+        onStart={handleStart}
+        onStop={handleStop}
+        isRunning={isRunning}
+        formRef={formRef}
+      />
 
       {metrics && (
         <>
           <Divider style={{ margin: '8px 0 16px' }} />
-          <MetricsCards metrics={metrics} />
-          <RealtimeCharts chartData={chartData} />
+          {/* Pass connected so MetricsCards shows the live/disconnected badge */}
+          <MetricsCards metrics={metrics} connected={connected} />
+          {/* Pass metrics so charts can render histogram + error breakdown */}
+          <RealtimeCharts chartData={chartData} metrics={metrics} />
           <LogsTable logs={logs} onExport={handleExport} />
         </>
       )}
+
+      {/* History Drawer — slides in from the right */}
+      <HistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </div>
   );
 }

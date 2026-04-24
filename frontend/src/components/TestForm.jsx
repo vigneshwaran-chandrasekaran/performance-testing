@@ -12,6 +12,7 @@ import {
   Typography,
   Tooltip,
   Alert,
+  Divider,
 } from 'antd';
 import {
   PlayCircleOutlined,
@@ -29,6 +30,11 @@ const DEFAULT_VALUES = {
   duration: 30,
   retries: 0,
   timeout: 10000,
+  loadProfile: 'constant',
+  rampUp: 0,
+  thinkTime: 0,
+  stepSize: 10,
+  stepInterval: 10,
 };
 
 function isValidJson(str) {
@@ -41,9 +47,14 @@ function isValidJson(str) {
   }
 }
 
-export default function TestForm({ onStart, onStop, isRunning }) {
+export default function TestForm({ onStart, onStop, isRunning, initialValues, formRef }) {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  // Watch loadProfile to show/hide conditional fields
+  const loadProfile = Form.useWatch('loadProfile', form);
+
+  // Allow parent components (e.g. SavedProfiles) to set form values
+  if (formRef) formRef.current = form;
 
   const handleStart = async () => {
     try {
@@ -81,6 +92,12 @@ export default function TestForm({ onStart, onStop, isRunning }) {
         duration: values.duration,
         retries: values.retries ?? 0,
         timeout: values.timeout ?? 10000,
+        // New load profile fields
+        loadProfile: values.loadProfile ?? 'constant',
+        rampUp: values.rampUp ?? 0,
+        thinkTime: values.thinkTime ?? 0,
+        stepSize: values.stepSize ?? 0,
+        stepInterval: values.stepInterval ?? 10,
       });
     } catch {
       // validation errors are shown inline
@@ -102,7 +119,7 @@ export default function TestForm({ onStart, onStop, isRunning }) {
       <Form
         form={form}
         layout="vertical"
-        initialValues={DEFAULT_VALUES}
+        initialValues={{ ...DEFAULT_VALUES, ...initialValues }}
         disabled={isRunning}
       >
         <Row gutter={16}>
@@ -288,6 +305,105 @@ export default function TestForm({ onStart, onStop, isRunning }) {
               <InputNumber min={1000} max={120000} step={1000} style={{ width: '100%' }} />
             </Form.Item>
           </Col>
+        </Row>
+
+        {/* ── Advanced: Load Profile settings ── */}
+        <Divider orientation="left" orientationMargin={0} style={{ fontSize: 13 }}>
+          Load Profile
+        </Divider>
+        <Row gutter={16}>
+          {/* Load Profile selector */}
+          <Col xs={24} sm={8} md={6}>
+            <Form.Item
+              label={
+                <Space>
+                  Profile
+                  <Tooltip title="Constant: fixed TPS throughout | Ramp-up: gradually increase TPS | Step: increase TPS in steps">
+                    <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
+                  </Tooltip>
+                </Space>
+              }
+              name="loadProfile"
+            >
+              <Select>
+                <Select.Option value="constant">Constant</Select.Option>
+                <Select.Option value="ramp">Ramp-up</Select.Option>
+                <Select.Option value="step">Step Load</Select.Option>
+              </Select>
+            </Form.Item>
+          </Col>
+
+          {/* Think Time: shown for all profiles */}
+          <Col xs={12} sm={8} md={5}>
+            <Form.Item
+              label={
+                <Space>
+                  Think Time (ms)
+                  <Tooltip title="Pause between requests per virtual user (simulates real user behavior). 0 = no pause.">
+                    <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
+                  </Tooltip>
+                </Space>
+              }
+              name="thinkTime"
+            >
+              <InputNumber min={0} max={60000} step={100} style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+
+          {/* Ramp-up Duration: only shown when profile = 'ramp' */}
+          {loadProfile === 'ramp' && (
+            <Col xs={12} sm={8} md={5}>
+              <Form.Item
+                label={
+                  <Space>
+                    Ramp-up (sec)
+                    <Tooltip title="Time to gradually increase from 0 to target TPS">
+                      <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
+                    </Tooltip>
+                  </Space>
+                }
+                name="rampUp"
+              >
+                <InputNumber min={0} max={300} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          )}
+
+          {/* Step Size + Step Interval: only shown when profile = 'step' */}
+          {loadProfile === 'step' && (
+            <>
+              <Col xs={12} sm={8} md={5}>
+                <Form.Item
+                  label={
+                    <Space>
+                      Step Size (TPS)
+                      <Tooltip title="Amount to increase TPS at each step">
+                        <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
+                      </Tooltip>
+                    </Space>
+                  }
+                  name="stepSize"
+                >
+                  <InputNumber min={1} max={1000} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col xs={12} sm={8} md={5}>
+                <Form.Item
+                  label={
+                    <Space>
+                      Step Interval (sec)
+                      <Tooltip title="How often to increase the TPS (in seconds)">
+                        <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
+                      </Tooltip>
+                    </Space>
+                  }
+                  name="stepInterval"
+                >
+                  <InputNumber min={1} max={300} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+            </>
+          )}
         </Row>
 
         {isRunning && (

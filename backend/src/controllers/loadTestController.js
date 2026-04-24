@@ -16,6 +16,11 @@ module.exports = (loadTestService) => {
         duration = 60,
         retries = 0,
         timeout = 30000,
+        rampUp = 0,
+        thinkTime = 0,
+        loadProfile = 'constant',
+        stepSize = 0,
+        stepInterval = 10,
       } = req.body;
 
       if (!url || typeof url !== 'string') {
@@ -54,6 +59,11 @@ module.exports = (loadTestService) => {
         duration,
         retries: Math.min(Math.max(0, Number(retries) || 0), 3),
         timeout: Math.min(Math.max(1000, Number(timeout) || 30000), 120000),
+        rampUp: Math.min(Math.max(0, Number(rampUp) || 0), 300),
+        thinkTime: Math.min(Math.max(0, Number(thinkTime) || 0), 60000),
+        loadProfile: ['constant', 'ramp', 'step'].includes(loadProfile) ? loadProfile : 'constant',
+        stepSize: Math.max(0, Number(stepSize) || 0),
+        stepInterval: Math.min(Math.max(1, Number(stepInterval) || 10), 300),
       };
 
       const testId = await loadTestService.startTest(config);
@@ -82,6 +92,12 @@ module.exports = (loadTestService) => {
   // GET /api/load-test/results
   router.get('/results', (_req, res) => {
     res.json(loadTestService.getResults());
+  });
+
+  // GET /api/load-test/history
+  // Returns the last 10 completed test summaries
+  router.get('/history', (_req, res) => {
+    res.json(loadTestService.getHistory());
   });
 
   return router;

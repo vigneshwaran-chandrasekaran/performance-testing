@@ -19,6 +19,11 @@ module.exports = (io) => {
   let emitInterval = null;
   let stopTimeout = null;
 
+  // ─── Test history ──────────────────────────────────────────────────
+  // Keep the last 10 completed test results in memory so the frontend
+  // can show a history list without a database.
+  const testHistory = [];
+
   // ─── Metrics helpers ───────────────────────────────────────────────
 
   function createEmptyMetrics() {
@@ -29,24 +34,67 @@ module.exports = (io) => {
       responseTimeSum: 0,
       minResponseTime: null,
       maxResponseTime: 0,
-      recentLogs: [],       // last 200 individual request logs
-      allLogs: [],          // full log for export (capped at 10 000)
-      perSecondData: [],    // [{second, tps, avgResponseTime}] for charts
+
+      // All individual response times kept in memory for percentile calculation.
+      // We cap at 100 000 to avoid unbounded memory growth on long tests.
+      responseTimes: [],
+
+      // Error breakdown: maps HTTP status code (or error type) → count
+      // e.g. { '500': 12, 'Timeout': 3, '404': 1 }
+      errorBreakdown: {},
+
+      // Latency histogram buckets in ms: 0-100, 101-300, 301-500, 501-1000, 1001-3000, 3000+
+      histogram: { '0-100': 0, '101-300': 0, '301-500': 0, '501-1000': 0, '1001-3000': 0, '3000+': 0 },
+
+      recentLogs: [],       // last 200 individual request logs shown in UI table
+      allLogs: [],          // full log for CSV/JSON export (capped at 10 000)
+      perSecondData: [],    // [{second, tps, avgResponseTime}] for live charts
+
+      // Per-second accumulators (reset every second)
       _secondRequests: 0,
       _secondResponseTimeSum: 0,
       _secondStart: Date.now(),
     };
   }
 
+  // ─── Percentile helper ─────────────────────────────────────────────
+  // Given a sorted array of numbers, return the value at the Nth percentile.
+  // e.g. percentile([1,2,3,4,5,6,7,8,9,10], 90) => 9
+  function percentile(sortedArr, p) {
+    if (!sortedArr.length) return 0;
+    const idx = Math.ceil((p / 100) * sortedArr.length) - 1;
+    return sortedArr[Math.max(0, idx)];
+  }
+
+  // ─── Histogram bucket helper ───────────────────────────────────────
+  // Returns the histogram bucket key for a given response time (ms)
+  function histogramBucket(ms) {
+    if (ms <= 100) return '0-100';
+    if (ms <= 300) return '101-300';
+    if (ms <= 500) return '301-500';
+    if (ms <= 1000) return '501-1000';
+    if (ms <= 3000) return '1001-3000';
+    return '3000+';
+  }
+
   function handleWorkerResult(msg) {
     if (msg.type !== 'result' || !testState.running) return;
 
     metrics.totalRequests++;
-    if (msg.success) metrics.successCount++;
-    else metrics.failureCount++;
+    if (msg.success) {
+      metrics.successCount++;
+    } else {
+      metrics.failureCount++;
+
+      // Track error by status code or error type for breakdown chart
+      // e.g. '500', '404', 'Timeout', 'ECONNREFUSED'
+      const errorKey = msg.statusCode ? String(msg.statusCode) : (msg.error || 'Unknown');
+      metrics.errorBreakdown[errorKey] = (metrics.errorBreakdown[errorKey] || 0) + 1;
+    }
 
     metrics.responseTimeSum += msg.responseTime;
 
+    // Track min / max
     if (metrics.minResponseTime === null || msg.responseTime < metrics.minResponseTime) {
       metrics.minResponseTime = msg.responseTime;
     }
@@ -54,6 +102,16 @@ module.exports = (io) => {
       metrics.maxResponseTime = msg.responseTime;
     }
 
+    // Store raw response time for percentile calculation (capped at 100k)
+    if (metrics.responseTimes.length < 100000) {
+      metrics.responseTimes.push(msg.responseTime);
+    }
+
+    // Increment the histogram bucket for this response time
+    const bucket = histogramBucket(msg.responseTime);
+    metrics.histogram[bucket]++;
+
+    // Per-second counters for the live chart
     metrics._secondRequests++;
     metrics._secondResponseTimeSum += msg.responseTime;
 
@@ -95,7 +153,8 @@ module.exports = (io) => {
   }
 
   // ─── Snapshot / public API ─────────────────────────────────────────
-
+  // Builds a complete snapshot of the current test state and metrics.
+  // Called every second for live emit, and once on test complete.
   function buildSnapshot(includeAllLogs = false) {
     const avgResponseTime = metrics.totalRequests > 0
       ? Math.round(metrics.responseTimeSum / metrics.totalRequests)
@@ -105,19 +164,40 @@ module.exports = (io) => {
       ? Math.floor((Date.now() - testState.startTime) / 1000)
       : 0;
 
+    // Sort response times once to calculate all percentiles efficiently
+    const sorted = [...metrics.responseTimes].sort((a, b) => a - b);
+
     const snapshot = {
       testId: testState.testId,
       running: testState.running,
       elapsedSeconds: elapsed,
+      // Duration from config so frontend can show progress bar
+      totalDuration: testState.config ? testState.config.duration : 0,
+
       totalRequests: metrics.totalRequests,
       successCount: metrics.successCount,
       failureCount: metrics.failureCount,
       successRate: metrics.totalRequests > 0
         ? parseFloat(((metrics.successCount / metrics.totalRequests) * 100).toFixed(1))
         : 0,
+
+      // Response time stats
       avgResponseTime,
       minResponseTime: metrics.minResponseTime ?? 0,
       maxResponseTime: metrics.maxResponseTime,
+
+      // Percentiles — p50 is median, p95/p99 reveal tail latency
+      p50: percentile(sorted, 50),
+      p90: percentile(sorted, 90),
+      p95: percentile(sorted, 95),
+      p99: percentile(sorted, 99),
+
+      // Error breakdown by status code / error type for pie chart
+      errorBreakdown: metrics.errorBreakdown,
+
+      // Latency histogram for bar chart
+      histogram: metrics.histogram,
+
       perSecondData: metrics.perSecondData,
       recentLogs: metrics.recentLogs.slice(0, 50),
     };
@@ -139,10 +219,18 @@ module.exports = (io) => {
     testState = { running: true, testId, config, startTime: Date.now(), endTime: null };
 
     const numCPUs = os.cpus().length;
-    const { concurrency = 10, tps = 10, duration = 60 } = config;
+    const {
+      concurrency = 10,
+      tps = 10,
+      duration = 60,
+      rampUp = 0,       // seconds to gradually reach full TPS (0 = instant)
+      thinkTime = 0,    // ms pause between requests per virtual user
+      loadProfile = 'constant', // 'constant' | 'ramp' | 'step'
+      stepSize = 0,     // TPS to add every stepInterval seconds (for 'step' mode)
+      stepInterval = 10,// seconds between each step increase
+    } = config;
 
     // Worker count: capped by CPU count, 16, concurrency, AND tps
-    // (tps cap ensures tpsPerWorker >= 1, preventing token-bucket deadlock)
     const maxByTps = tps > 0 ? Math.max(1, Math.floor(tps)) : Infinity;
     const numWorkers = Math.min(Math.max(1, numCPUs), 16, concurrency, maxByTps);
     const concurrencyPerWorker = Math.ceil(concurrency / numWorkers);
@@ -159,9 +247,12 @@ module.exports = (io) => {
             body: config.body || null,
             timeout: config.timeout || 30000,
             retries: config.retries || 0,
+            thinkTime,   // passed to worker so it pauses after each request
           },
           tpsPerWorker,
           concurrencyPerWorker,
+          rampUp,        // worker uses this to gradually increase its rate
+          loadProfile,
         },
       });
 
@@ -174,7 +265,23 @@ module.exports = (io) => {
       workers.push(worker);
     }
 
-    console.log(`[Service] Test ${testId} started: ${numWorkers} workers, ${concurrencyPerWorker} concurrency/worker, ${tpsPerWorker.toFixed(1)} TPS/worker, ${duration}s`);
+    // ── Step load mode ─────────────────────────────────────────────
+    // Every `stepInterval` seconds, send each worker a message to
+    // increase its TPS by (stepSize / numWorkers).
+    if (loadProfile === 'step' && stepSize > 0) {
+      let stepCount = 0;
+      const stepTimer = setInterval(() => {
+        if (!testState.running) { clearInterval(stepTimer); return; }
+        stepCount++;
+        const addedTpsPerWorker = (stepSize * stepCount) / numWorkers;
+        workers.forEach((w) => {
+          try { w.postMessage({ type: 'setTps', tps: tpsPerWorker + addedTpsPerWorker }); } catch (_) {}
+        });
+        console.log(`[Service] Step ${stepCount}: TPS increased by ${stepSize} (total ~${tps + stepSize * stepCount})`);
+      }, stepInterval * 1000);
+    }
+
+    console.log(`[Service] Test ${testId} started: ${numWorkers} workers, ${concurrencyPerWorker} concurrency/worker, ${tpsPerWorker.toFixed(1)} TPS/worker, ${duration}s, profile=${loadProfile}`);
 
     // Emit metrics every second
     emitInterval = setInterval(() => {
@@ -210,9 +317,29 @@ module.exports = (io) => {
 
     flushSecondMetrics();
     const finalSnapshot = buildSnapshot();
+
+    // ── Save to history (keep last 10 runs) ───────────────────────
+    // Store a summary + the config so the user can review past results
+    testHistory.unshift({
+      testId: finalSnapshot.testId,
+      completedAt: new Date().toISOString(),
+      config: testState.config,
+      summary: {
+        totalRequests: finalSnapshot.totalRequests,
+        successCount: finalSnapshot.successCount,
+        failureCount: finalSnapshot.failureCount,
+        successRate: finalSnapshot.successRate,
+        avgResponseTime: finalSnapshot.avgResponseTime,
+        p95: finalSnapshot.p95,
+        p99: finalSnapshot.p99,
+        elapsedSeconds: finalSnapshot.elapsedSeconds,
+      },
+    });
+    if (testHistory.length > 10) testHistory.length = 10;
+
     io.emit('metrics-update', finalSnapshot);
     io.emit('test-complete', finalSnapshot);
-    console.log(`[Service] Test ${testState.testId} complete: ${finalSnapshot.totalRequests} requests, ${finalSnapshot.successCount} success, ${finalSnapshot.avgResponseTime}ms avg`);
+    console.log(`[Service] Test ${testState.testId} complete: ${finalSnapshot.totalRequests} requests, ${finalSnapshot.successCount} success, p95=${finalSnapshot.p95}ms, p99=${finalSnapshot.p99}ms`);
   }
 
   // ─── Public interface ──────────────────────────────────────────────
@@ -228,5 +355,7 @@ module.exports = (io) => {
         : 0,
     }),
     getResults: () => buildSnapshot(true),
+    // Returns last 10 completed test summaries
+    getHistory: () => testHistory,
   };
 };
