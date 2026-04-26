@@ -21,6 +21,10 @@ import {
   StopOutlined,
   InfoCircleOutlined,
   CodeOutlined,
+  PlusOutlined,
+  DeleteOutlined,
+  BellOutlined,
+  SafetyOutlined,
 } from '@ant-design/icons';
 
 const { TextArea } = Input;
@@ -180,6 +184,8 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
   const [loading, setLoading] = useState(false);
   const [curlInput, setCurlInput] = useState('');        // raw cURL text in the textarea
   const [curlPanelOpen, setCurlPanelOpen] = useState([]); // controls collapse open/closed
+  // Assertions: array of {id, type, operator, value}
+  const [assertions, setAssertions] = useState([]);
   // Watch loadProfile to show/hide conditional fields
   const loadProfile = Form.useWatch('loadProfile', form);
 
@@ -206,13 +212,32 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
         ? JSON.stringify(headers, null, 2)
         : '';
 
-      // If body is valid JSON, pretty-print it; otherwise keep as-is
+      // Convert body to a JSON string for the textarea.
+      // Three cases:
+      //  1. content-type is application/x-www-form-urlencoded → parse key=value pairs → JSON object
+      //  2. body is already valid JSON → pretty-print it
+      //  3. anything else → leave as plain string (validator will flag it)
       let bodyStr = '';
       if (body) {
-        try {
-          bodyStr = JSON.stringify(JSON.parse(body), null, 2);
-        } catch {
-          bodyStr = body; // not JSON — leave as plain string
+        const contentType = (headers['Content-Type'] || headers['content-type'] || '').toLowerCase();
+        if (contentType.includes('application/x-www-form-urlencoded')) {
+          // Convert URL-encoded form data to a JSON object so the body field accepts it
+          try {
+            const params = new URLSearchParams(body);
+            const obj = {};
+            for (const [key, value] of params.entries()) {
+              obj[key] = value;
+            }
+            bodyStr = JSON.stringify(obj, null, 2);
+          } catch {
+            bodyStr = body;
+          }
+        } else {
+          try {
+            bodyStr = JSON.stringify(JSON.parse(body), null, 2);
+          } catch {
+            bodyStr = body; // not JSON — leave as plain string
+          }
         }
       }
 
@@ -277,6 +302,10 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
         // SLA auto-stop thresholds (0 = disabled)
         maxErrorRate: values.maxErrorRate ?? 0,
         maxP95: values.maxP95 ?? 0,
+        // Response assertions (empty array = no assertions)
+        assertions: assertions.filter((a) => a.type && a.value !== ''),
+        // Webhook notification URL (empty = disabled)
+        webhookUrl: values.webhookUrl ? values.webhookUrl.trim() : null,
       });
     } catch {
       // validation errors are shown inline
@@ -662,6 +691,138 @@ export default function TestForm({ onStart, onStop, isRunning, initialValues, fo
             </Form.Item>
           </Col>
         </Row>
+
+        {/* ─── Response Assertions ────────────────────────────────────────────
+            Rules checked against each response. Tracks pass/fail separately
+            from HTTP success so you can validate business logic (e.g. body
+            must contain "status":"ok") without it counting as a network failure.
+        ──────────────────────────────────────────────────────────────────────── */}
+        <Divider orientation="left" style={{ fontSize: 13, color: '#595959', marginTop: 8 }}>
+          <Space>
+            <SafetyOutlined />
+            Response Assertions
+          </Space>
+        </Divider>
+
+        {assertions.map((a, idx) => (
+          <Row gutter={8} key={a.id} style={{ marginBottom: 8 }} align="middle">
+            {/* Assertion type */}
+            <Col xs={24} sm={7}>
+              <Select
+                value={a.type}
+                style={{ width: '100%' }}
+                placeholder="Type"
+                onChange={(val) => {
+                  const next = [...assertions];
+                  next[idx] = { ...next[idx], type: val, operator: val === 'statusCode' ? 'equals' : undefined, value: '' };
+                  setAssertions(next);
+                }}
+                options={[
+                  { label: 'Status Code', value: 'statusCode' },
+                  { label: 'Body Contains', value: 'bodyContains' },
+                  { label: 'Body Not Contains', value: 'bodyNotContains' },
+                  { label: 'Response Time Below (ms)', value: 'responseTimeBelow' },
+                ]}
+                disabled={isRunning}
+              />
+            </Col>
+
+            {/* Operator — only for statusCode */}
+            {a.type === 'statusCode' && (
+              <Col xs={24} sm={5}>
+                <Select
+                  value={a.operator || 'equals'}
+                  style={{ width: '100%' }}
+                  onChange={(val) => {
+                    const next = [...assertions];
+                    next[idx] = { ...next[idx], operator: val };
+                    setAssertions(next);
+                  }}
+                  options={[
+                    { label: '= equals', value: 'equals' },
+                    { label: '≠ not equals', value: 'notEquals' },
+                    { label: '≥ gte', value: 'gte' },
+                    { label: '≤ lte', value: 'lte' },
+                  ]}
+                  disabled={isRunning}
+                />
+              </Col>
+            )}
+
+            {/* Value */}
+            <Col xs={24} sm={a.type === 'statusCode' ? 9 : 14}>
+              <Input
+                value={a.value}
+                placeholder={
+                  a.type === 'statusCode' ? 'e.g. 200'
+                  : a.type === 'responseTimeBelow' ? 'e.g. 2000'
+                  : 'e.g. "success"'
+                }
+                onChange={(e) => {
+                  const next = [...assertions];
+                  next[idx] = { ...next[idx], value: e.target.value };
+                  setAssertions(next);
+                }}
+                disabled={isRunning}
+              />
+            </Col>
+
+            {/* Remove button */}
+            <Col xs={2} sm={2}>
+              <Button
+                danger
+                type="text"
+                icon={<DeleteOutlined />}
+                onClick={() => setAssertions(assertions.filter((_, i) => i !== idx))}
+                disabled={isRunning}
+              />
+            </Col>
+          </Row>
+        ))}
+
+        <Button
+          type="dashed"
+          icon={<PlusOutlined />}
+          onClick={() => setAssertions([...assertions, { id: Date.now(), type: 'statusCode', operator: 'equals', value: '200' }])}
+          disabled={isRunning}
+          style={{ marginBottom: 16 }}
+        >
+          Add Assertion
+        </Button>
+
+        {/* ─── Webhook Notification ───────────────────────────────────────────
+            POST a JSON summary to this URL when the test completes.
+            Works with Slack incoming webhooks, Discord, or any HTTP endpoint.
+        ──────────────────────────────────────────────────────────────────────── */}
+        <Divider orientation="left" style={{ fontSize: 13, color: '#595959', marginTop: 8 }}>
+          <Space>
+            <BellOutlined />
+            Webhook Notification
+          </Space>
+        </Divider>
+        <Form.Item
+          label={
+            <Space>
+              Webhook URL
+              <Tooltip title="When the test finishes, a POST request with the results is sent to this URL. Works with Slack, Discord, or any HTTP endpoint. Leave blank to disable.">
+                <InfoCircleOutlined style={{ color: '#8c8c8c' }} />
+              </Tooltip>
+            </Space>
+          }
+          name="webhookUrl"
+          rules={[{
+            validator: (_, val) => {
+              if (!val || val.trim() === '') return Promise.resolve();
+              try { new URL(val); return Promise.resolve(); }
+              catch { return Promise.reject('Enter a valid URL'); }
+            },
+          }]}
+        >
+          <Input
+            placeholder="https://hooks.slack.com/services/... or https://discord.com/api/webhooks/..."
+            allowClear
+          />
+        </Form.Item>
 
         {isRunning && (
           <Alert

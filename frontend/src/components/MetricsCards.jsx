@@ -7,6 +7,7 @@ import {
   SendOutlined,
   DashboardOutlined,
   WifiOutlined,
+  SafetyOutlined,
 } from '@ant-design/icons';
 
 const { Text } = Typography;
@@ -30,6 +31,9 @@ export default function MetricsCards({ metrics, connected }) {
     totalDuration = 0,
     running = false,
     perSecondData = [],
+    hasAssertions = false,
+    assertionPassCount = 0,
+    assertionFailCount = 0,
   } = metrics;
 
   // Current TPS from the most recent per-second data point
@@ -182,6 +186,42 @@ export default function MetricsCards({ metrics, connected }) {
           </Col>
         ))}
       </Row>
+
+      {/* ── Row 3: Assertion results (only shown when assertions are configured) ── */}
+      {hasAssertions && (
+        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+          <Col xs={12} sm={6}>
+            <Card size="small" style={{ textAlign: 'center', borderTop: '3px solid #52c41a' }}>
+              <Statistic
+                title={<Space><SafetyOutlined />Assertions Passed</Space>}
+                value={assertionPassCount}
+                valueStyle={{ color: '#52c41a', fontSize: 28 }}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} sm={6}>
+            <Card size="small" style={{ textAlign: 'center', borderTop: '3px solid #ff4d4f' }}>
+              <Statistic
+                title={<Space><SafetyOutlined />Assertions Failed</Space>}
+                value={assertionFailCount}
+                valueStyle={{ color: '#ff4d4f', fontSize: 28 }}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} sm={6}>
+            <Card size="small" style={{ textAlign: 'center', borderTop: '3px solid #722ed1' }}>
+              <Statistic
+                title="Assertion Pass Rate"
+                value={assertionPassCount + assertionFailCount > 0
+                  ? ((assertionPassCount / (assertionPassCount + assertionFailCount)) * 100).toFixed(1)
+                  : 0}
+                suffix="%"
+                valueStyle={{ color: '#722ed1', fontSize: 28 }}
+              />
+            </Card>
+          </Col>
+        </Row>
+      )}
     </>
   );
 }

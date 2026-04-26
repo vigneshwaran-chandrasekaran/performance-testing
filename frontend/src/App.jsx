@@ -1,6 +1,7 @@
+import { useState, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { ConfigProvider, Layout, Typography, theme, Menu } from 'antd';
-import { ThunderboltOutlined, DashboardOutlined } from '@ant-design/icons';
+import { ConfigProvider, Layout, Typography, theme, Menu, Button, Tooltip } from 'antd';
+import { ThunderboltOutlined, DashboardOutlined, MoonOutlined, SunOutlined } from '@ant-design/icons';
 import LoadTest from './pages/LoadTest';
 import Benchmark from './pages/Benchmark';
 
@@ -23,17 +24,19 @@ const NAV_ITEMS = [
 
 // AppContent is a separate component so it can use React Router hooks
 // (useLocation / useNavigate) which only work inside a <BrowserRouter>
-function AppContent() {
+function AppContent({ darkMode, toggleDarkMode }) {
   const location = useLocation();
   const navigate = useNavigate();
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#f0f2f5' }}>
+    <Layout style={{ minHeight: '100vh', background: darkMode ? '#141414' : '#f0f2f5' }}>
       <Header
         style={{
           display: 'flex',
           alignItems: 'center',
-          background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
+          background: darkMode
+            ? 'linear-gradient(135deg, #1d3a6b 0%, #0d2347 100%)'
+            : 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
           padding: '0 24px',
           boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
         }}
@@ -59,6 +62,16 @@ function AppContent() {
             minWidth: 0,
           }}
         />
+
+        {/* Dark mode toggle */}
+        <Tooltip title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}>
+          <Button
+            type="text"
+            icon={darkMode ? <SunOutlined style={{ fontSize: 16 }} /> : <MoonOutlined style={{ fontSize: 16 }} />}
+            onClick={toggleDarkMode}
+            style={{ color: '#fff', marginLeft: 8 }}
+          />
+        </Tooltip>
       </Header>
 
       <Content style={{ padding: '24px', maxWidth: 1400, margin: '0 auto', width: '100%' }}>
@@ -78,10 +91,22 @@ function AppContent() {
 }
 
 export default function App() {
+  const [darkMode, setDarkMode] = useState(() => {
+    try { return localStorage.getItem('loadtest_darkmode') === 'true'; } catch { return false; }
+  });
+
+  const toggleDarkMode = useCallback(() => {
+    setDarkMode((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('loadtest_darkmode', String(next)); } catch {}
+      return next;
+    });
+  }, []);
+
   return (
     <ConfigProvider
       theme={{
-        algorithm: theme.defaultAlgorithm,
+        algorithm: darkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
           colorPrimary: '#1677ff',
           borderRadius: 6,
@@ -89,7 +114,7 @@ export default function App() {
       }}
     >
       <BrowserRouter>
-        <AppContent />
+        <AppContent darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
       </BrowserRouter>
     </ConfigProvider>
   );

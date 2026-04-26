@@ -4,6 +4,7 @@ import {
   FileTextOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  SafetyOutlined,
 } from '@ant-design/icons';
 
 const { Text } = Typography;
@@ -107,6 +108,19 @@ const COLUMNS = [
       ) : (
         <Text type="secondary" style={{ fontSize: 11 }}>—</Text>
       ),
+  },
+  {
+    title: <Tooltip title="Response assertion result (only shown when assertions are configured)"><SafetyOutlined /> Assert</Tooltip>,
+    dataIndex: 'assertionsPassed',
+    key: 'assertionsPassed',
+    width: 80,
+    align: 'center',
+    render: (val) => {
+      if (val === null || val === undefined) return <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+      return val
+        ? <Tag color="success" style={{ fontSize: 10 }}>Pass</Tag>
+        : <Tag color="error" style={{ fontSize: 10 }}>Fail</Tag>;
+    },
   },
 ];
 

@@ -46,6 +46,10 @@ module.exports = (io) => {
       // Latency histogram buckets in ms: 0-100, 101-300, 301-500, 501-1000, 1001-3000, 3000+
       histogram: { '0-100': 0, '101-300': 0, '301-500': 0, '501-1000': 0, '1001-3000': 0, '3000+': 0 },
 
+      // Assertion tracking (null = no assertions configured in this test)
+      assertionPassCount: 0,
+      assertionFailCount: 0,
+
       recentLogs: [],       // last 200 individual request logs shown in UI table
       allLogs: [],          // full log for CSV/JSON export (capped at 10 000)
       perSecondData: [],    // [{second, tps, avgResponseTime, p95}] for live charts
@@ -117,6 +121,10 @@ module.exports = (io) => {
     metrics._secondResponseTimeSum += msg.responseTime;
     metrics._secondResponseTimes.push(msg.responseTime);
 
+    // Track assertion results (null means no assertions were configured)
+    if (msg.assertionsPassed === true) metrics.assertionPassCount++;
+    else if (msg.assertionsPassed === false) metrics.assertionFailCount++;
+
     const logEntry = {
       id: msg.requestId,
       timestamp: msg.timestamp,
@@ -124,6 +132,7 @@ module.exports = (io) => {
       responseTime: msg.responseTime,
       success: msg.success,
       error: msg.error || null,
+      assertionsPassed: msg.assertionsPassed,
     };
 
     metrics.recentLogs.unshift(logEntry);
@@ -205,6 +214,11 @@ module.exports = (io) => {
       // Latency histogram for bar chart
       histogram: metrics.histogram,
 
+      // Assertion results (only meaningful when test has assertions configured)
+      assertionPassCount: metrics.assertionPassCount,
+      assertionFailCount: metrics.assertionFailCount,
+      hasAssertions: !!(testState.config && testState.config.assertions && testState.config.assertions.length > 0),
+
       perSecondData: metrics.perSecondData,
       recentLogs: metrics.recentLogs.slice(0, 50),
     };
@@ -257,6 +271,7 @@ module.exports = (io) => {
             timeout: config.timeout || 30000,
             retries: config.retries || 0,
             thinkTime,   // passed to worker so it pauses after each request
+            assertions: config.assertions || [],  // response assertion rules
           },
           tpsPerWorker,
           concurrencyPerWorker,
@@ -379,6 +394,38 @@ module.exports = (io) => {
     io.emit('metrics-update', finalSnapshot);
     io.emit('test-complete', finalSnapshot);
     console.log(`[Service] Test ${testState.testId} complete: ${finalSnapshot.totalRequests} requests, ${finalSnapshot.successCount} success, p95=${finalSnapshot.p95}ms, p99=${finalSnapshot.p99}ms`);
+
+    // ── Webhook notification ──────────────────────────────────────────
+    // If the user configured a webhook URL, POST a compact summary to it.
+    // Failures are logged but not surfaced to the user (fire-and-forget).
+    if (testState.config && testState.config.webhookUrl) {
+      const axios = require('axios');
+      const webhookPayload = {
+        event: 'test-complete',
+        testId: finalSnapshot.testId,
+        completedAt: new Date().toISOString(),
+        config: {
+          url: testState.config.url,
+          method: testState.config.method,
+          duration: testState.config.duration,
+          concurrency: testState.config.concurrency,
+          tps: testState.config.tps,
+        },
+        summary: {
+          totalRequests: finalSnapshot.totalRequests,
+          successCount: finalSnapshot.successCount,
+          failureCount: finalSnapshot.failureCount,
+          successRate: finalSnapshot.successRate,
+          avgResponseTime: finalSnapshot.avgResponseTime,
+          p95: finalSnapshot.p95,
+          p99: finalSnapshot.p99,
+          elapsedSeconds: finalSnapshot.elapsedSeconds,
+        },
+      };
+      axios.post(testState.config.webhookUrl, webhookPayload, { timeout: 5000 })
+        .then(() => console.log(`[Service] Webhook sent to ${testState.config.webhookUrl}`))
+        .catch((err) => console.error(`[Service] Webhook failed: ${err.message}`));
+    }
   }
 
   // ─── Public interface ──────────────────────────────────────────────

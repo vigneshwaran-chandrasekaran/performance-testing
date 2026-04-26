@@ -8,6 +8,7 @@ import RealtimeCharts from '../components/RealtimeCharts';
 import LogsTable from '../components/LogsTable';
 import HistoryDrawer from '../components/HistoryDrawer';
 import SavedProfiles from '../components/SavedProfiles';
+import EnvironmentsPanel, { applyEnvironment } from '../components/EnvironmentsPanel';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
@@ -42,6 +43,10 @@ export default function LoadTest() {
   const [chartData, setChartData] = useState([]);
   const [connected, setConnected] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false); // controls HistoryDrawer
+  const [activeEnvId, setActiveEnvId] = useState(() => {
+    try { return localStorage.getItem('loadtest_active_env') ? Number(localStorage.getItem('loadtest_active_env')) : null; }
+    catch { return null; }
+  });
 
   const socketRef = useRef(null);
   const formRef = useRef(null); // shared ref so SavedProfiles can read/set form values
@@ -108,12 +113,24 @@ export default function LoadTest() {
 
   // ─── Actions ────────────────────────────────────────────────────────
 
+  const handleActiveEnvChange = useCallback((envId) => {
+    setActiveEnvId(envId);
+    try {
+      if (envId) localStorage.setItem('loadtest_active_env', String(envId));
+      else localStorage.removeItem('loadtest_active_env');
+    } catch {}
+  }, []);
+
   const handleStart = useCallback(async (config) => {
     try {
+      // Load environments from localStorage and apply active env substitutions
+      const envs = (() => { try { return JSON.parse(localStorage.getItem('loadtest_environments') || '[]'); } catch { return []; } })();
+      const resolvedConfig = applyEnvironment(config, envs, activeEnvId);
+
       const res = await fetch(`${BACKEND_URL}/api/load-test/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+        body: JSON.stringify(resolvedConfig),
       });
 
       const data = await res.json();
@@ -231,6 +248,12 @@ export default function LoadTest() {
 
       {/* Saved profiles strip — lets users load/save test configs */}
       <SavedProfiles formRef={formRef} />
+
+      {/* Environment Variables panel — define {{VAR}} substitutions */}
+      <EnvironmentsPanel
+        activeEnvId={activeEnvId}
+        onActiveEnvChange={handleActiveEnvChange}
+      />
 
       {/* Main test form — formRef allows SavedProfiles to inject values */}
       <TestForm

@@ -125,6 +125,43 @@ function resolveVariables(str) {
     .replace(/\{\{timestamp\}\}/g, () => Date.now());
 }
 
+// ─── Response Assertion checker ───────────────────────────────────────────────
+// Evaluates a list of assertion rules against a completed response.
+// Returns true when ALL assertions pass (or when no assertions are configured).
+function checkAssertions(assertions, statusCode, responseBody, responseTime) {
+  if (!assertions || !assertions.length) return null; // null = no assertions configured
+
+  let bodyStr = '';
+  if (responseBody !== undefined && responseBody !== null) {
+    try {
+      bodyStr = typeof responseBody === 'string' ? responseBody : JSON.stringify(responseBody);
+    } catch { bodyStr = ''; }
+  }
+
+  return assertions.every((a) => {
+    switch (a.type) {
+      case 'statusCode': {
+        const val = Number(a.value);
+        switch (a.operator) {
+          case 'equals':    return statusCode === val;
+          case 'notEquals': return statusCode !== val;
+          case 'gte':       return statusCode >= val;
+          case 'lte':       return statusCode <= val;
+          case 'range': {
+            const [min, max] = String(a.value).split('-').map(Number);
+            return statusCode >= min && statusCode <= max;
+          }
+          default: return true;
+        }
+      }
+      case 'bodyContains':    return bodyStr.includes(String(a.value));
+      case 'bodyNotContains': return !bodyStr.includes(String(a.value));
+      case 'responseTimeBelow': return responseTime < Number(a.value);
+      default: return true;
+    }
+  });
+}
+
 // ─── Core request function with retry ─────────────────────────────────────────
 // Makes a single HTTP request and sends the result back to the main thread.
 // Retries only on network-level errors (not on HTTP 4xx/5xx).
@@ -162,6 +199,14 @@ async function makeRequest() {
       totalTime = Date.now() - start;
       const success = response.status >= 200 && response.status < 400;
 
+      // Evaluate response assertions (null = no assertions configured)
+      const assertionsPassed = checkAssertions(
+        config.assertions,
+        response.status,
+        response.data,
+        totalTime,
+      );
+
       parentPort.postMessage({
         type: 'result',
         requestId,
@@ -170,6 +215,7 @@ async function makeRequest() {
         responseTime: totalTime,
         error: success ? null : `HTTP ${response.status}`,
         timestamp: new Date().toISOString(),
+        assertionsPassed,
       });
       return; // done — exit retry loop
     } catch (err) {

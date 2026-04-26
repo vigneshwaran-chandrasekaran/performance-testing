@@ -5,6 +5,8 @@
  * Opens when the user clicks the "History" button in LoadTest.jsx.
  *
  * Data is fetched from GET /api/load-test/history each time the drawer opens.
+ * The drawer also allows selecting exactly 2 runs and comparing them side-by-side
+ * via the CompareModal.
  */
 import { useState, useEffect } from 'react';
 import {
@@ -18,8 +20,11 @@ import {
   Descriptions,
   Modal,
   Button,
+  Checkbox,
+  Tooltip,
 } from 'antd';
-import { HistoryOutlined, EyeOutlined } from '@ant-design/icons';
+import { HistoryOutlined, EyeOutlined, SwapOutlined } from '@ant-design/icons';
+import CompareModal from './CompareModal';
 
 const { Text } = Typography;
 
@@ -37,11 +42,14 @@ export default function HistoryDrawer({ open, onClose }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedRun, setSelectedRun] = useState(null); // for config detail modal
+  const [compareIds, setCompareIds] = useState([]);     // up to 2 testIds selected for comparison
+  const [compareOpen, setCompareOpen] = useState(false);
 
   // ── Fetch history every time the drawer is opened ────────────────────────
   useEffect(() => {
     if (!open) return;
     setLoading(true);
+    setCompareIds([]); // clear selection when reopening
     // Use BACKEND_URL so this works in production (Vercel → Render).
     // Previously used a relative URL '/api/...' which only works in local dev.
     fetch(`${BACKEND_URL}/api/load-test/history`)
@@ -51,8 +59,33 @@ export default function HistoryDrawer({ open, onClose }) {
       .finally(() => setLoading(false));
   }, [open]);
 
+  const toggleCompareId = (testId) => {
+    setCompareIds((prev) => {
+      if (prev.includes(testId)) return prev.filter((id) => id !== testId);
+      if (prev.length >= 2) return [prev[1], testId]; // slide window: drop oldest
+      return [...prev, testId];
+    });
+  };
+
+  const compareRunA = compareIds[0] ? history.find((r) => r.testId === compareIds[0]) : null;
+  const compareRunB = compareIds[1] ? history.find((r) => r.testId === compareIds[1]) : null;
+
   // ── Table columns ─────────────────────────────────────────────────────────
   const columns = [
+    {
+      title: (
+        <Tooltip title="Select exactly 2 runs to compare">Compare</Tooltip>
+      ),
+      key: 'compare',
+      width: 70,
+      align: 'center',
+      render: (_, record) => (
+        <Checkbox
+          checked={compareIds.includes(record.testId)}
+          onChange={() => toggleCompareId(record.testId)}
+        />
+      ),
+    },
     {
       title: 'Completed',
       dataIndex: 'completedAt',
@@ -142,9 +175,25 @@ export default function HistoryDrawer({ open, onClose }) {
         }
         open={open}
         onClose={onClose}
-        width={900}
+        width={960}
         bodyStyle={{ padding: 16 }}
+        extra={
+          compareIds.length === 2 && (
+            <Button
+              type="primary"
+              icon={<SwapOutlined />}
+              onClick={() => setCompareOpen(true)}
+            >
+              Compare Selected
+            </Button>
+          )
+        }
       >
+        {compareIds.length > 0 && compareIds.length < 2 && (
+          <Text type="secondary" style={{ display: 'block', marginBottom: 8, fontSize: 12 }}>
+            Select one more run to enable comparison.
+          </Text>
+        )}
         {loading ? (
           <div style={{ textAlign: 'center', padding: 40 }}>
             <Spin size="large" />
@@ -158,7 +207,10 @@ export default function HistoryDrawer({ open, onClose }) {
             rowKey={(r) => r.testId}
             pagination={false}
             size="small"
-            scroll={{ x: 700 }}
+            scroll={{ x: 760 }}
+            rowClassName={(record) =>
+              compareIds.includes(record.testId) ? 'compare-selected-row' : ''
+            }
           />
         )}
       </Drawer>
@@ -204,6 +256,14 @@ export default function HistoryDrawer({ open, onClose }) {
           </>
         )}
       </Modal>
+
+      {/* ── Compare Modal ── */}
+      <CompareModal
+        open={compareOpen}
+        onClose={() => setCompareOpen(false)}
+        runA={compareRunA}
+        runB={compareRunB}
+      />
     </>
   );
 }
